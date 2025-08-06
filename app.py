@@ -1,13 +1,11 @@
 import streamlit as st
 from langdetect import detect
 from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
-from bertopic import BERTopic
-from sentence_transformers import SentenceTransformer
 import requests
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
 
-# 🔁 Translate to English (Improved with fallback and logging)
+# 🔁 Translate to English (fallback-safe)
 def translate_to_english(text, source_lang):
     try:
         response = requests.post(
@@ -21,55 +19,47 @@ def translate_to_english(text, source_lang):
             timeout=10
         )
         result = response.json()
-        if "translatedText" in result and result["translatedText"].strip().lower() != text.strip().lower():
-            return result["translatedText"]
-        else:
-            return text
+        return result.get("translatedText", text)
     except Exception as e:
-        print("Translation failed:", e)
+        print("Translation error:", e)
         return text
 
-# 🔁 Load models
+# ✅ Load models
 @st.cache_resource
 def load_models():
     sentiment_model = pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english")
-    embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
-    topic_model = BERTopic(embedding_model=embedding_model)
     tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-base")
     response_model = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-base")
-    return sentiment_model, topic_model, tokenizer, response_model
+    return sentiment_model, tokenizer, response_model
 
-sentiment_model, topic_model, tokenizer, response_model = load_models()
+sentiment_model, tokenizer, response_model = load_models()
 
-# 🤖 Generate LLM-based response
-def generate_response(review_text):
-    prompt = f"You are a helpful and polite customer support agent. A customer said: \"{review_text}\". Write a kind, empathetic response."
+# 🤖 LLM-based response (based on sentiment)
+def generate_response(text, sentiment):
+    if sentiment == "POSITIVE":
+        prompt = f"You are a helpful support agent. The customer said: \"{text}\". Reply with appreciation and positivity."
+    else:
+        prompt = f"You are a polite support agent. The customer had a bad experience: \"{text}\". Respond with empathy and offer to improve."
+
     inputs = tokenizer(prompt, return_tensors="pt", truncation=True)
     outputs = response_model.generate(**inputs, max_new_tokens=60)
     return tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-# 🚀 UI
+# 🖼️ UI Setup
 st.set_page_config(page_title="Multilingual Review Analyzer", layout="wide")
 st.title("🌍 Multilingual Review Response Generator")
 review_input = st.text_area("✍️ Enter review(s) - one per line:", height=200)
 
 if st.button("Analyze"):
     raw_reviews = [r.strip() for r in review_input.strip().split("\n") if r.strip()]
-
     if not raw_reviews:
         st.warning("Please enter at least one review.")
     else:
         st.markdown("---")
         translated_reviews = []
         sentiments = []
-        displayed_reviews = []
 
-        # Add dummy if only one review (for BERTopic)
-        modeling_reviews = raw_reviews.copy()
-        if len(raw_reviews) == 1:
-            modeling_reviews.append("dummy review to enable topic modeling")
-
-        for review in raw_reviews:
+        for i, review in enumerate(raw_reviews):
             # 🌐 Language detection
             lang = detect(review)
             st.markdown(f"**🌐 Detected Language:** {lang}")
@@ -79,37 +69,20 @@ if st.button("Analyze"):
             if lang != "en":
                 st.markdown(f"**🗣️ Translated Review:** {translated}")
 
-            if lang != "en" and translated.strip().lower() == review.strip().lower():
-                st.warning("⚠️ Translation API might have failed. Review not translated.")
-
-            # 😊 Sentiment
+            # 😊 Sentiment Analysis
             result = sentiment_model(translated)[0]
             sentiment = result['label']
             sentiments.append(sentiment)
             st.markdown(f"**😊 Sentiment:** {sentiment}")
 
-            # 🤖 LLM-generated response
-            response = generate_response(translated)
-            st.text_area("✍️ Suggested Response (editable):", value=response, height=100)
+            # 🤖 Response based on sentiment
+            response = generate_response(translated, sentiment)
+            st.text_area("✍️ Suggested Response (editable):", value=response, height=100, key=f"response_{i}")
 
             translated_reviews.append(translated)
-            displayed_reviews.append(review)
-
             st.markdown("---")
 
-        # 🧠 Topic Modeling
-        valid_reviews = [r for r in translated_reviews if r.strip() and "dummy" not in r.lower()]
-        if len(valid_reviews) >= 2:
-            topics, _ = topic_model.fit_transform(valid_reviews)
-            st.subheader("🧠 Topics")
-            for i, topic in enumerate(topics[:len(displayed_reviews)]):
-                topic_words = topic_model.get_topic(topic)
-                topic_label = topic_words[0][0] if topic_words else "N/A"
-                st.markdown(f"**Topic for Review {i+1}:** {topic_label}")
-        else:
-            st.warning("⚠️ Not enough valid reviews to perform topic modeling. Please enter at least 2 reviews.")
-
-        # 📊 Sentiment Distribution Pie Chart
+        # 📊 Sentiment Pie Chart
         st.subheader("📊 Sentiment Distribution")
         sentiment_counts = {s: sentiments.count(s) for s in set(sentiments)}
         fig, ax = plt.subplots()
