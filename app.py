@@ -1,10 +1,10 @@
 import streamlit as st
 from langdetect import detect
 from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM, MarianMTModel, MarianTokenizer
-from sklearn.cluster import KMeans
 from sentence_transformers import SentenceTransformer
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
+from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 import re
 
@@ -50,11 +50,29 @@ def generate_response(text, sentiment, topic=None):
 def classify_sentiment(score):
     return "POSITIVE" if score > 3 else "NEUTRAL" if score == 3 else "NEGATIVE"
 
-# Clustering
-def cluster_reviews(reviews, n_clusters=3):
-    embeddings = embedder.encode(reviews)
-    kmeans = KMeans(n_clusters=n_clusters, random_state=0)
-    labels = kmeans.fit_predict(embeddings)
+# Alternative clustering using cosine similarity
+def cluster_by_similarity(embeddings, threshold=0.85):
+    clusters = []
+    assigned = set()
+
+    for i, emb in enumerate(embeddings):
+        if i in assigned:
+            continue
+        cluster = [i]
+        assigned.add(i)
+        for j in range(i + 1, len(embeddings)):
+            if j not in assigned:
+                sim = cosine_similarity([emb], [embeddings[j]])[0][0]
+                if sim >= threshold:
+                    cluster.append(j)
+                    assigned.add(j)
+        clusters.append(cluster)
+
+    # Map each review index to a topic ID
+    labels = [0] * len(embeddings)
+    for topic_id, group in enumerate(clusters):
+        for index in group:
+            labels[index] = topic_id
     return labels
 
 # App UI
@@ -89,8 +107,10 @@ if st.button("Analyze"):
             st.markdown(f"- 🗣️ Translated: {translated}")
         st.markdown(f"- 😊 Sentiment: `{sentiment}` ({score} stars)")
 
-    # 2. Clustering
-    cluster_labels = cluster_reviews(translated_reviews, n_clusters=3)
+    # 2. Clustering using cosine similarity
+    embeddings = embedder.encode(translated_reviews)
+    cluster_labels = cluster_by_similarity(embeddings, threshold=0.85)
+
     for i, (review, sentiment, label) in enumerate(zip(translated_reviews, sentiments, cluster_labels)):
         topic = f"Topic {label + 1}"
         topics.append(topic)
