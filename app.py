@@ -1,7 +1,7 @@
 import streamlit as st
 from langdetect import detect
 from transformers import (
-    pipeline, AutoTokenizer, AutoModelForSeq2SeqLM, M2M100ForConditionalGeneration, M2M100Tokenizer
+    pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
 )
 from sentence_transformers import SentenceTransformer
 import matplotlib.pyplot as plt
@@ -20,9 +20,6 @@ def load_models():
 
 sentiment_pipe, flan_tokenizer, flan_model, embedder = load_models()
 
-# Load M2M100 translation model (no sentencepiece needed)
-@st.cache_resource
-# Load translation model
 @st.cache_resource
 def load_translation_model():
     model_name = 'Helsinki-NLP/opus-mt-mul-en'
@@ -30,14 +27,13 @@ def load_translation_model():
     model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
     return tokenizer, model
 
-# Translate using MarianMT
+trans_tokenizer, trans_model = load_translation_model()
+
 def translate_to_english(text):
-    inputs = trans_tokenizer.prepare_seq2seq_batch([text], return_tensors="pt", padding=True)
+    inputs = trans_tokenizer([text], return_tensors="pt", padding=True, truncation=True)
     outputs = trans_model.generate(**inputs)
     return trans_tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-
-# Generate AI response
 def generate_response(review, sentiment, topic):
     prompt = (
         f"A customer wrote a {sentiment.lower()} review: '{review}'. "
@@ -48,11 +44,9 @@ def generate_response(review, sentiment, topic):
     output = flan_model.generate(**inputs, max_new_tokens=80)
     return flan_tokenizer.decode(output[0], skip_special_tokens=True)
 
-# Classify sentiment
 def classify_sentiment(score):
     return "POSITIVE" if score > 3 else "NEUTRAL" if score == 3 else "NEGATIVE"
 
-# Cosine similarity clustering
 def cluster_by_similarity(embeddings, threshold=0.85):
     clusters = []
     assigned = set()
@@ -88,12 +82,11 @@ if st.button("Analyze"):
     st.markdown("---")
     translated_reviews, sentiments, topics, languages = [], [], [], []
 
-    # Step 1: Translate + Sentiment
     for i, review in enumerate(raw_reviews):
         lang = detect(review)
         languages.append(lang)
 
-       translated = translate_to_english(review) if lang != "en" else review
+        translated = translate_to_english(review) if lang != "en" else review
 
         sentiment_result = sentiment_pipe(translated)[0]
         score = int(sentiment_result["label"].split()[0])
@@ -108,7 +101,6 @@ if st.button("Analyze"):
             st.markdown(f"- 🗣️ Translated: `{translated}`")
         st.markdown(f"- 😊 Sentiment: `{sentiment}` ({score} stars)")
 
-    # Step 2: Clustering
     embeddings = embedder.encode(translated_reviews)
     cluster_labels = cluster_by_similarity(embeddings, threshold=0.85)
 
@@ -121,7 +113,6 @@ if st.button("Analyze"):
         st.text_area("✍️ Suggested Response:", value=response, key=f"response_{i}", height=100)
         st.markdown("---")
 
-    # Step 3: Charts
     st.subheader("📊 Sentiment Distribution")
     counts = {s: sentiments.count(s) for s in set(sentiments)}
     fig, ax = plt.subplots()
@@ -137,5 +128,3 @@ if st.button("Analyze"):
         ax_wc.imshow(wordcloud, interpolation="bilinear")
         ax_wc.axis("off")
         st.pyplot(fig_wc)
-
-
