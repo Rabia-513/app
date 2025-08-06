@@ -22,20 +22,20 @@ sentiment_pipe, flan_tokenizer, flan_model, embedder = load_models()
 
 # Load M2M100 translation model (no sentencepiece needed)
 @st.cache_resource
+# Load translation model
+@st.cache_resource
 def load_translation_model():
-    model_name = "facebook/m2m100_418M"
-    tokenizer = M2M100Tokenizer.from_pretrained(model_name)
-    model = M2M100ForConditionalGeneration.from_pretrained(model_name)
+    model_name = 'Helsinki-NLP/opus-mt-mul-en'
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
     return tokenizer, model
 
-trans_tokenizer, trans_model = load_translation_model()
+# Translate using MarianMT
+def translate_to_english(text):
+    inputs = trans_tokenizer.prepare_seq2seq_batch([text], return_tensors="pt", padding=True)
+    outputs = trans_model.generate(**inputs)
+    return trans_tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-# Translate to English
-def translate_to_english(text, source_lang):
-    trans_tokenizer.src_lang = source_lang
-    encoded = trans_tokenizer(text, return_tensors="pt")
-    generated_tokens = trans_model.generate(**encoded, forced_bos_token_id=trans_tokenizer.get_lang_id("en"))
-    return trans_tokenizer.decode(generated_tokens[0], skip_special_tokens=True)
 
 # Generate AI response
 def generate_response(review, sentiment, topic):
@@ -136,3 +136,4 @@ if st.button("Analyze"):
         ax_wc.imshow(wordcloud, interpolation="bilinear")
         ax_wc.axis("off")
         st.pyplot(fig_wc)
+
