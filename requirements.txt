@@ -1,9 +1,8 @@
 streamlit
-transformers
+langdetect
+transformers==4.41.1
 sentence-transformers
 matplotlib
 wordcloud
-langdetect
 scikit-learn
-numpy
-requests
+torch
