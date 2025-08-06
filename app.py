@@ -55,7 +55,7 @@ def generate_response(text, sentiment):
 
 # ✅ Streamlit UI
 st.set_page_config(page_title="Multilingual Review Analyzer", layout="wide")
-st.title("🌐 Multilingual Review Response Generator")
+st.title("🌍 Multilingual Review Response Generator")
 review_input = st.text_area("✍️ Enter review(s) - one per line:", height=200)
 
 if st.button("Analyze"):
@@ -108,6 +108,3 @@ if st.button("Analyze"):
         ax_wc.imshow(wordcloud, interpolation="bilinear")
         ax_wc.axis("off")
         st.pyplot(fig_wc)
-
-
-
