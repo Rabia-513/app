@@ -5,4 +5,4 @@ langdetect
 requests
 matplotlib
 wordcloud
-sentencepiece  # Needed for FLAN-T5 tokenizer
+sentencepiece
