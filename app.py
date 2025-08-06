@@ -56,7 +56,15 @@ if st.button("Analyze"):
         st.markdown(f"**😊 Sentiment:** {sentiment}")
 
         # Topic Modeling
-        topics, _ = topic_model.fit_transform([translated_review])
+      # Topic Modeling (UMAP requires at least 2 samples)
+text_for_topic_modeling = [translated_review]
+if len(text_for_topic_modeling) == 1:
+    text_for_topic_modeling.append("This is a dummy review to enable topic modeling.")
+
+topics, _ = topic_model.fit_transform(text_for_topic_modeling)
+topic_label = topic_model.get_topic(topics[0])[0][0] if topics else "N/A"
+st.markdown(f"**🧠 Topic:** {topic_label}")
+
         topic_label = topic_model.get_topic(topics[0])[0][0] if topics else "N/A"
         st.markdown(f"**🧠 Topic:** {topic_label}")
 
@@ -66,3 +74,4 @@ if st.button("Analyze"):
 
 if __name__ == "__main__":
     st.write("App loaded successfully")
+
