@@ -6,11 +6,11 @@ import matplotlib.pyplot as plt
 from wordcloud import WordCloud
 import re
 
-# ✅ Check for meaningful translation
+# ✅ Utility: Check for meaningful text
 def is_text_meaningful(text):
     return bool(re.search(r'[a-zA-Z]', text)) and len(text.split()) >= 3
 
-# 🔁 Translate to English using LibreTranslate API
+# ✅ Translation using LibreTranslate
 def translate_to_english(text, source_lang):
     try:
         response = requests.post(
@@ -25,39 +25,35 @@ def translate_to_english(text, source_lang):
         )
         result = response.json()
         translated = result.get("translatedText", "").strip()
-        if not translated:
-            print(f"Translation failed or empty for: {text}")
-        elif translated.lower() == text.strip().lower():
-            print(f"No real translation happened for: {text}")
-        else:
-            print(f"Translated: {translated}")
-        return translated if translated else text
+        if not translated or translated.lower() == text.lower():
+            return text, False  # fallback or same
+        return translated, True
     except Exception as e:
         print("Translation error:", e)
-        return text
+        return text, False
 
-# ✅ Load models with caching
+# ✅ Load sentiment & response models
 @st.cache_resource
 def load_models():
     sentiment_model = pipeline("sentiment-analysis", model="nlptown/bert-base-multilingual-uncased-sentiment")
-    tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-base")
-    response_model = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-base")
+    tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-large")
+    response_model = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-large")
     return sentiment_model, tokenizer, response_model
 
 sentiment_model, tokenizer, response_model = load_models()
 
-# 🤖 Generate response using LLM
+# ✅ Generate polite 2-line support response
 def generate_response(text, sentiment):
     if sentiment == "POSITIVE":
-        prompt = f"You are a helpful support agent. A customer said: \"{text}\". Reply with appreciation and positivity."
+        prompt = f"""You are a friendly support agent. A customer said: "{text}". Write a short 2-line reply showing appreciation."""
     else:
-        prompt = f"You are a polite support agent. A customer said: \"{text}\". Reply with empathy, acknowledge the issue, and offer assistance or apology."
-
+        prompt = f"""You are a polite support agent. A customer said: "{text}". Write a short 2-line reply acknowledging the issue, showing empathy, and promising to improve."""
+    
     inputs = tokenizer(prompt, return_tensors="pt", truncation=True)
     outputs = response_model.generate(**inputs, max_new_tokens=60)
     return tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-# 🚀 UI
+# ✅ Streamlit UI
 st.set_page_config(page_title="Multilingual Review Analyzer", layout="wide")
 st.title("🌍 Multilingual Review Response Generator")
 review_input = st.text_area("✍️ Enter review(s) - one per line:", height=200)
@@ -76,29 +72,28 @@ if st.button("Analyze"):
             lang = detect(review)
             st.markdown(f"**🌐 Detected Language:** `{lang}`")
 
-            translated = translate_to_english(review, lang) if lang != "en" else review
-            
+            translated, translated_ok = translate_to_english(review, lang) if lang != "en" else (review, False)
             if lang != "en":
-                if translated == review:
+                if not translated_ok:
                     st.warning("⚠️ Translation may have failed or was not required.")
                 else:
                     st.markdown(f"**🗣️ Translated Review:** {translated}")
 
-            # 😊 Sentiment Detection (1–5 stars)
+            # ✅ Sentiment detection (returns stars)
             result = sentiment_model(translated)[0]
-            score = int(result['label'].split()[0])  # e.g., "4 stars"
+            score = int(result['label'][0])  # e.g., '4 stars' -> 4
             sentiment = "POSITIVE" if score > 3 else "NEGATIVE"
             sentiments.append(sentiment)
             st.markdown(f"**😊 Sentiment:** {sentiment} ({score} stars)")
 
-            # 🤖 Suggested Response
+            # 🤖 Response generation
             response = generate_response(translated, sentiment)
             st.text_area("✍️ Suggested Response (editable):", value=response, height=100, key=f"response_{i}")
 
             translated_reviews.append(translated)
             st.markdown("---")
 
-        # 📊 Pie Chart
+        # 📊 Sentiment Pie Chart
         st.subheader("📊 Sentiment Distribution")
         sentiment_counts = {s: sentiments.count(s) for s in set(sentiments)}
         fig, ax = plt.subplots()
