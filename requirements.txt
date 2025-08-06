@@ -1,6 +1,8 @@
 streamlit
-langdetect
 transformers
 sentence-transformers
 bertopic
+langdetect
 requests
+matplotlib
+wordcloud
