@@ -93,7 +93,8 @@ if st.button("Analyze"):
         lang = detect(review)
         languages.append(lang)
 
-        translated = translate_to_english(review, lang) if lang != "en" else review
+       translated = translate_to_english(review) if lang != "en" else review
+
         sentiment_result = sentiment_pipe(translated)[0]
         score = int(sentiment_result["label"].split()[0])
         sentiment = classify_sentiment(score)
@@ -136,4 +137,5 @@ if st.button("Analyze"):
         ax_wc.imshow(wordcloud, interpolation="bilinear")
         ax_wc.axis("off")
         st.pyplot(fig_wc)
+
 
