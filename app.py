@@ -24,33 +24,38 @@ def translate_to_english(text):
     try:
         response = requests.post(
             "https://libretranslate.com/translate",
-            params={
+            data={
                 "q": text,
                 "source": "auto",
                 "target": "en",
                 "format": "text"
             },
-            headers={"accept": "application/json"}
+            headers={
+                "accept": "application/json",
+                "Content-Type": "application/x-www-form-urlencoded"
+            }
         )
         if response.status_code == 200:
             return response.json()["translatedText"]
         else:
-            return text  # fallback
-    except Exception:
+            return text
+    except Exception as e:
+        print("Translation failed:", e)
         return text
 
-# Smart response
+# Smart response generator
 def generate_response(text, sentiment, topic=None):
     prompt = (
-        f"You're a customer support agent. A customer said: \"{text}\". "
-        f"Generate a polite and empathetic response." +
-        (f" The topic of the review is '{topic}'." if topic else "")
+        f"A customer left the following {sentiment.lower()} review: \"{text}\".\n"
+        f"Write a professional and empathetic response as a customer service representative."
     )
+    if topic:
+        prompt += f" The review is about {topic}."
     inputs = flan_tokenizer(prompt, return_tensors="pt", truncation=True)
     outputs = flan_model.generate(**inputs, max_new_tokens=80)
     return flan_tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-# Sentiment classification
+# Classify star rating to sentiment
 def classify_sentiment(score):
     return "POSITIVE" if score > 3 else "NEUTRAL" if score == 3 else "NEGATIVE"
 
@@ -91,12 +96,13 @@ if st.button("Analyze"):
         st.stop()
 
     st.markdown("---")
-    translated_reviews, sentiments, topics = [], [], []
+    translated_reviews, sentiments, topics, detected_langs = [], [], [], []
 
-    # 1. Translate & Analyze
     for i, review in enumerate(raw_reviews):
         lang = detect(review)
         translated = translate_to_english(review) if lang != 'en' else review
+        detected_langs.append(lang)
+
         sentiment_result = sentiment_pipe(translated)[0]
         score = int(sentiment_result['label'].split()[0])
         sentiment = classify_sentiment(score)
@@ -107,12 +113,12 @@ if st.button("Analyze"):
         st.markdown(f"**Review {i+1}:**")
         st.markdown(f"- 🌐 Language: `{lang}`")
         if lang != 'en':
-            st.markdown(f"- 🗣️ Translated: {translated}")
+            st.markdown(f"- 🗣️ Translated: `{translated}`")
         st.markdown(f"- 😊 Sentiment: `{sentiment}` ({score} stars)")
 
-    # 2. Clustering
+    # Clustering
     embeddings = embedder.encode(translated_reviews)
-    cluster_labels = cluster_by_similarity(embeddings, threshold=0.85)
+    cluster_labels = cluster_by_similarity(embeddings)
 
     for i, (review, sentiment, label) in enumerate(zip(translated_reviews, sentiments, cluster_labels)):
         topic = f"Topic {label + 1}"
@@ -123,13 +129,14 @@ if st.button("Analyze"):
         st.text_area("✍️ Suggested Response:", value=response, key=f"response_{i}", height=100)
         st.markdown("---")
 
-    # 3. Visualization
+    # Pie chart
     st.subheader("📊 Sentiment Distribution")
     sentiment_counts = {s: sentiments.count(s) for s in set(sentiments)}
     fig, ax = plt.subplots()
     ax.pie(sentiment_counts.values(), labels=sentiment_counts.keys(), autopct="%1.1f%%")
     st.pyplot(fig)
 
+    # Word clouds
     st.subheader("☁️ Word Cloud per Topic")
     for label in set(cluster_labels):
         topic_reviews = [r for i, r in enumerate(translated_reviews) if cluster_labels[i] == label]
