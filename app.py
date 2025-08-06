@@ -1,13 +1,14 @@
 import streamlit as st
 from langdetect import detect
-from transformers import pipeline
+from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
 from bertopic import BERTopic
 from sentence_transformers import SentenceTransformer
 import requests
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
+import torch
 
-# Translation using LibreTranslate API
+# ---------------------- Translation Function ---------------------- #
 def translate_to_english(text, source_lang):
     try:
         response = requests.post("https://libretranslate.com/translate", json={
@@ -20,20 +21,27 @@ def translate_to_english(text, source_lang):
     except:
         return text
 
-# Load models once
+# ---------------------- Load Models ---------------------- #
 @st.cache_resource
 def load_models():
     sentiment_model = pipeline("sentiment-analysis", model="distilbert-base-uncased-finetuned-sst-2-english")
     embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
     topic_model = BERTopic(embedding_model=embedding_model)
-    return sentiment_model, topic_model
+    tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-base")
+    generator_model = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-base")
+    return sentiment_model, topic_model, tokenizer, generator_model
 
-sentiment_model, topic_model = load_models()
+sentiment_model, topic_model, tokenizer, generator_model = load_models()
 
-# App title
+# ---------------------- Generate Auto Response ---------------------- #
+def generate_response(review_text):
+    prompt = f"You are a polite customer support agent. A customer said: '{review_text}'. Write a helpful and empathetic response."
+    inputs = tokenizer(prompt, return_tensors="pt", truncation=True)
+    outputs = generator_model.generate(**inputs, max_new_tokens=60)
+    return tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+# ---------------------- Streamlit UI ---------------------- #
 st.title("🌍 Multilingual Review Response Generator")
-
-# Text input
 review_input = st.text_area("✍️ Enter review(s) - one per line:", height=200)
 
 if st.button("Analyze"):
@@ -42,7 +50,6 @@ if st.button("Analyze"):
     topics_list = []
 
     if len(reviews) == 1:
-        # Add dummy review to prevent UMAP error
         reviews.append("This is a dummy review to enable topic modeling.")
 
     st.markdown("---")
@@ -50,46 +57,46 @@ if st.button("Analyze"):
         if review == "This is a dummy review to enable topic modeling.":
             continue
 
-        # Detect language
+        # 🌐 Language Detection
         lang = detect(review)
         st.markdown(f"**🌐 Detected Language:** {lang}")
 
-        # Translate if not English
+        # 🌍 Translation
         translated_review = translate_to_english(review, lang) if lang != "en" else review
         if lang != "en":
             st.markdown(f"**🗣️ Translated Review:** {translated_review}")
 
-        # Sentiment
+        # 😊 Sentiment
         result = sentiment_model(translated_review)[0]
         sentiment = result['label']
         sentiments.append(sentiment)
         st.markdown(f"**😊 Sentiment:** {sentiment}")
 
-        # Collect for topic modeling
+        # Collect review for topic modeling
         topics_list.append(translated_review)
 
-        # Response
-        response = f"As a support agent: We appreciate your feedback. Regarding your comment: \"{translated_review}\", we will work on it. Thank you!"
-        editable = st.text_area("✍️ Suggested Response (editable):", value=response, height=100)
+        # 🤖 Auto-generated Response
+        response = generate_response(translated_review)
+        editable_response = st.text_area("✍️ Suggested Response (editable):", value=response, height=100)
 
         st.markdown("---")
 
-    # Topic Modeling
+    # 🧠 Topic Modeling
     topics, _ = topic_model.fit_transform(topics_list)
     for i, topic in enumerate(topics):
         topic_info = topic_model.get_topic(topic)
         topic_label = topic_info[0][0] if topic_info else "N/A"
         st.markdown(f"**🧠 Topic for Review {i+1}:** {topic_label}")
 
-    # Pie Chart for Sentiment Distribution
+    # 📊 Pie Chart: Sentiment Distribution
     st.subheader("📊 Sentiment Distribution")
     sentiment_counts = {s: sentiments.count(s) for s in set(sentiments)}
     fig, ax = plt.subplots()
     ax.pie(sentiment_counts.values(), labels=sentiment_counts.keys(), autopct="%1.1f%%", startangle=90)
     st.pyplot(fig)
 
-    # WordCloud for all reviews
-    st.subheader("☁️ WordCloud of Translated Reviews")
+    # ☁️ Word Cloud
+    st.subheader("☁️ Word Cloud of Translated Reviews")
     all_text = " ".join(topics_list)
     wordcloud = WordCloud(width=800, height=400, background_color="white").generate(all_text)
     fig_wc, ax_wc = plt.subplots()
