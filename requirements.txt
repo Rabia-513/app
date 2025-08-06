@@ -6,3 +6,4 @@ torch
 matplotlib
 wordcloud
 scikit-learn
+sentencepiece
