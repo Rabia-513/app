@@ -1,11 +1,7 @@
 streamlit
 langdetect
 transformers
-sentence-transformers
-bertopic
-umap-learn
-scikit-learn
+torch
 matplotlib
 wordcloud
 requests
-torch
