@@ -98,19 +98,16 @@ if st.button("Analyze"):
             st.markdown("---")
 
         # 🧠 Topic Modeling
-        st.subheader("🧠 Topics")
-     # Filter out empty or dummy-only reviews
-valid_reviews = [r for r in translated_reviews if r.strip() and "dummy" not in r.lower()]
-if len(valid_reviews) >= 2:
-    topics, _ = topic_model.fit_transform(valid_reviews)
-    st.subheader("🧠 Topics")
-    for i, topic in enumerate(topics[:len(displayed_reviews)]):
-        topic_words = topic_model.get_topic(topic)
-        topic_label = topic_words[0][0] if topic_words else "N/A"
-        st.markdown(f"**Topic for Review {i+1}:** {topic_label}")
-else:
-    st.warning("⚠️ Not enough valid reviews to perform topic modeling. Please enter at least 2 reviews.")
-
+        valid_reviews = [r for r in translated_reviews if r.strip() and "dummy" not in r.lower()]
+        if len(valid_reviews) >= 2:
+            topics, _ = topic_model.fit_transform(valid_reviews)
+            st.subheader("🧠 Topics")
+            for i, topic in enumerate(topics[:len(displayed_reviews)]):
+                topic_words = topic_model.get_topic(topic)
+                topic_label = topic_words[0][0] if topic_words else "N/A"
+                st.markdown(f"**Topic for Review {i+1}:** {topic_label}")
+        else:
+            st.warning("⚠️ Not enough valid reviews to perform topic modeling. Please enter at least 2 reviews.")
 
         # 📊 Sentiment Distribution Pie Chart
         st.subheader("📊 Sentiment Distribution")
@@ -127,4 +124,3 @@ else:
         ax_wc.imshow(wordcloud, interpolation="bilinear")
         ax_wc.axis("off")
         st.pyplot(fig_wc)
-
