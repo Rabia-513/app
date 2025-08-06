@@ -1,8 +1,10 @@
 streamlit
+langdetect
 transformers
 torch
-langdetect
 requests
 matplotlib
 wordcloud
 sentencepiece
+
+
