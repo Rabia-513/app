@@ -1,7 +1,8 @@
 streamlit
-langdetect
 transformers
 torch
+langdetect
+requests
 matplotlib
 wordcloud
-requests
+sentencepiece  # Needed for FLAN-T5 tokenizer
