@@ -1,8 +1,8 @@
-streamlit>=1.26
-langdetect>=1.0.9
-transformers>=4.41.0
-torch>=2.0.0
-sentence-transformers>=2.6.0
-scikit-learn>=1.3.0
-matplotlib>=3.8
-wordcloud>=1.9.3
+streamlit
+langdetect
+transformers
+sentence-transformers
+torch
+matplotlib
+wordcloud
+scikit-learn
