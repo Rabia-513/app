@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from wordcloud import WordCloud
 import re
 
-# ✅ Check for meaningful translation
+# ✅ Check if text is meaningful
 def is_text_meaningful(text):
     return bool(re.search(r'[a-zA-Z]', text)) and len(text.split()) >= 3
 
@@ -26,14 +26,12 @@ def translate_to_english(text, source_lang):
         result = response.json()
         translated = result.get("translatedText", "").strip()
         if not translated:
-            print(f"Translation failed or empty for: {text}")
+            st.warning("⚠️ Translation failed or empty.")
         elif translated.lower() == text.strip().lower():
-            print(f"No real translation happened for: {text}")
-        else:
-            print(f"Translated: {translated}")
+            st.info("ℹ️ Review may already be in English or not translated meaningfully.")
         return translated if translated else text
     except Exception as e:
-        print("Translation error:", e)
+        st.error(f"Translation error: {e}")
         return text
 
 # ✅ Load models with caching
@@ -46,19 +44,18 @@ def load_models():
 
 sentiment_model, tokenizer, response_model = load_models()
 
-# 🤖 Generate response using LLM
-def generate_response(text, sentiment):
-    if sentiment == "POSITIVE":
-        prompt = f"You are a helpful support agent. A customer said: \"{text}\". Reply with appreciation and positivity."
-    else:
-        prompt = f"You are a polite support agent. A customer said: \"{text}\". Reply with empathy, acknowledge the issue, and offer assistance or apology."
-
+# 🤖 Generate smart response
+def generate_response(text):
+    prompt = (
+        f"You're a customer support agent. A customer said: \"{text}\". "
+        "Generate a polite and empathetic response."
+    )
     inputs = tokenizer(prompt, return_tensors="pt", truncation=True)
-    outputs = response_model.generate(**inputs, max_new_tokens=60)
+    outputs = response_model.generate(**inputs, max_new_tokens=80)
     return tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-# 🚀 UI
-st.set_page_config(page_title="Multilingual Review Analyzer", layout="wide")
+# 🚀 UI Setup
+st.set_page_config(page_title="Multilingual Review Response Generator", layout="wide")
 st.title("🌍 Multilingual Review Response Generator")
 review_input = st.text_area("✍️ Enter review(s) - one per line:", height=200)
 
@@ -76,23 +73,21 @@ if st.button("Analyze"):
             lang = detect(review)
             st.markdown(f"**🌐 Detected Language:** `{lang}`")
 
+            # Translate if needed
             translated = translate_to_english(review, lang) if lang != "en" else review
             
             if lang != "en":
-                if translated == review:
-                    st.warning("⚠️ Translation may have failed or was not required.")
-                else:
-                    st.markdown(f"**🗣️ Translated Review:** {translated}")
+                st.markdown(f"**🗣️ Translated Review:** {translated}")
 
             # 😊 Sentiment Detection (1–5 stars)
             result = sentiment_model(translated)[0]
-            score = int(result['label'].split()[0])  # e.g., "4 stars"
+            score = int(result['label'].split()[0])
             sentiment = "POSITIVE" if score > 3 else "NEGATIVE"
             sentiments.append(sentiment)
             st.markdown(f"**😊 Sentiment:** {sentiment} ({score} stars)")
 
             # 🤖 Suggested Response
-            response = generate_response(translated, sentiment)
+            response = generate_response(translated)
             st.text_area("✍️ Suggested Response (editable):", value=response, height=100, key=f"response_{i}")
 
             translated_reviews.append(translated)
