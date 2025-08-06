@@ -6,15 +6,15 @@ import matplotlib.pyplot as plt
 from wordcloud import WordCloud
 import re
 
-# ✅ Utility: Check for meaningful text
+# ✅ Helper: Check for meaningful translation
 def is_text_meaningful(text):
     return bool(re.search(r'[a-zA-Z]', text)) and len(text.split()) >= 3
 
-# ✅ Translation using LibreTranslate
+# ✅ Translation using LibreTranslate API
 def translate_to_english(text, source_lang):
     try:
         response = requests.post(
-            "https://libretranslate.com/translate",
+            "https://libretranslate.de/translate",  # Stable mirror
             json={
                 "q": text,
                 "source": source_lang,
@@ -26,13 +26,13 @@ def translate_to_english(text, source_lang):
         result = response.json()
         translated = result.get("translatedText", "").strip()
         if not translated or translated.lower() == text.lower():
-            return text, False  # fallback or same
+            return text, False  # fallback
         return translated, True
     except Exception as e:
         print("Translation error:", e)
         return text, False
 
-# ✅ Load sentiment & response models
+# ✅ Load models (with better multilingual support and LLM)
 @st.cache_resource
 def load_models():
     sentiment_model = pipeline("sentiment-analysis", model="nlptown/bert-base-multilingual-uncased-sentiment")
@@ -42,13 +42,13 @@ def load_models():
 
 sentiment_model, tokenizer, response_model = load_models()
 
-# ✅ Generate polite 2-line support response
+# ✅ Generate polite, helpful 2-line support response
 def generate_response(text, sentiment):
     if sentiment == "POSITIVE":
-        prompt = f"""You are a friendly support agent. A customer said: "{text}". Write a short 2-line reply showing appreciation."""
+        prompt = f"A customer said: \"{text}\". As a helpful support agent, write a short 2-line polite and appreciative response."
     else:
-        prompt = f"""You are a polite support agent. A customer said: "{text}". Write a short 2-line reply acknowledging the issue, showing empathy, and promising to improve."""
-    
+        prompt = f"A customer said: \"{text}\". As a support agent, write a short 2-line empathetic response acknowledging the issue and promising improvement."
+
     inputs = tokenizer(prompt, return_tensors="pt", truncation=True)
     outputs = response_model.generate(**inputs, max_new_tokens=60)
     return tokenizer.decode(outputs[0], skip_special_tokens=True)
@@ -79,14 +79,14 @@ if st.button("Analyze"):
                 else:
                     st.markdown(f"**🗣️ Translated Review:** {translated}")
 
-            # ✅ Sentiment detection (returns stars)
+            # ✅ Sentiment detection using star-based scoring
             result = sentiment_model(translated)[0]
             score = int(result['label'][0])  # e.g., '4 stars' -> 4
             sentiment = "POSITIVE" if score > 3 else "NEGATIVE"
             sentiments.append(sentiment)
             st.markdown(f"**😊 Sentiment:** {sentiment} ({score} stars)")
 
-            # 🤖 Response generation
+            # ✅ Generate 2-line AI Response
             response = generate_response(translated, sentiment)
             st.text_area("✍️ Suggested Response (editable):", value=response, height=100, key=f"response_{i}")
 
@@ -100,7 +100,7 @@ if st.button("Analyze"):
         ax.pie(sentiment_counts.values(), labels=sentiment_counts.keys(), autopct="%1.1f%%", startangle=90)
         st.pyplot(fig)
 
-        # ☁️ Word Cloud
+        # ☁️ Word Cloud from Reviews
         st.subheader("☁️ Word Cloud of Translated Reviews")
         all_text = " ".join(translated_reviews)
         wordcloud = WordCloud(width=800, height=400, background_color="white").generate(all_text)
