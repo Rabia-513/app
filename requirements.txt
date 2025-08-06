@@ -1,0 +1,6 @@
+streamlit
+langdetect
+transformers
+sentence-transformers
+bertopic
+requests
