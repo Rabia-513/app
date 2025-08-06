@@ -3,9 +3,9 @@ langdetect
 transformers
 sentence-transformers
 bertopic
+umap-learn
 scikit-learn
 matplotlib
 wordcloud
 requests
-umap-learn
 torch
