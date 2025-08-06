@@ -30,9 +30,9 @@ def load_translation_model():
 trans_tokenizer, trans_model = load_translation_model()
 
 def translate_to_english(text):
-    inputs = trans_tokenizer([text], return_tensors="pt", padding=True, truncation=True)
+    inputs = trans_tokenizer(text, return_tensors="pt", padding=True, truncation=True)
     outputs = trans_model.generate(**inputs)
-    return trans_tokenizer.decode(outputs[0], skip_special_tokens=True)
+    return trans_tokenizer.batch_decode(outputs, skip_special_tokens=True)[0]
 
 def generate_response(review, sentiment, topic):
     prompt = (
