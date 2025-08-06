@@ -108,3 +108,4 @@ if st.button("Analyze"):
         ax_wc.imshow(wordcloud, interpolation="bilinear")
         ax_wc.axis("off")
         st.pyplot(fig_wc)
+
