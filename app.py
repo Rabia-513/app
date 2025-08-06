@@ -1,142 +1,242 @@
-import streamlit as st
-from langdetect import detect, DetectorFactory
-from transformers import pipeline, AutoTokenizer, AutoModelForSeq2SeqLM
-from sentence_transformers import SentenceTransformer
+# 📦 IMPORTS
+import pandas as pd
+import re
+import nltk
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
-from sklearn.metrics.pairwise import cosine_similarity
-import numpy as np
+from nltk.sentiment.vader import SentimentIntensityAnalyzer
+from nltk.corpus import stopwords
+from bertopic import BERTopic
+from sentence_transformers import SentenceTransformer
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 
-DetectorFactory.seed = 0  # for consistent langdetect results
+# NOTE: You MUST have run the previous notebook cell to generate
+# `multilingual_app_reviews_cleaned.csv` for this code to work.
 
-# Load main models
+# 📥 Download NLTK resources
+nltk.download('stopwords', quiet=True)
+nltk.download('vader_lexicon', quiet=True)
+stop_words = set(stopwords.words('english'))
+
+# ✅ 1. Load your pre-processed dataset
+# This file contains the English-translated and cleaned reviews
+try:
+    df = pd.read_csv("multilingual_app_reviews_cleaned.csv")
+    print("✅ Cleaned dataset loaded from file")
+except FileNotFoundError:
+    print("❌ ERROR: 'multilingual_app_reviews_cleaned.csv' not found.")
+    print("Please run the translation and cleaning cell first to generate this file.")
+    exit()
+
+# FIX: Drop rows with NaN values to prevent errors with the models
+df.dropna(subset=['review_text'], inplace=True)
+print(f"✅ Dropped rows with NaN values. New size: {len(df)}")
+
+
+# ✅ 2. BERTopic Topic Modeling
+# Use the cleaned review text for better topic cohesion
+embedding_model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
+topic_model = BERTopic(embedding_model=embedding_model)
+topics, _ = topic_model.fit_transform(df['review_text'])
+df['topic'] = topics
+print("\n✅ BERTopic modeling complete.")
+
+
+# ✅ 3. Sentiment Analysis using VADER
+sid = SentimentIntensityAnalyzer()
+
+def get_sentiment(text):
+    """Assigns a sentiment label based on VADER's compound score."""
+    if pd.isna(text):
+        return 'neutral'
+    score = sid.polarity_scores(text)['compound']
+    if score >= 0.05:
+        return 'positive'
+    elif score <= -0.05:
+        return 'negative'
+    else:
+        return 'neutral'
+
+df['sentiment'] = df['review_text'].apply(get_sentiment)
+print("✅ VADER sentiment analysis complete.")
+
+
+# ✅ 4. Load FLAN-T5 (or BART) for response generation
+# NOTE: This model is large and will be slow.
+# We will only generate responses for a small sample.
+print("\n⏳ Loading FLAN-T5 model...")
+tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-base")
+model = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-base")
+print("✅ FLAN-T5 model loaded.")
+
+
+# ✅ 5. Define the response generation function
+def generate_response_enhanced(topic, sentiment, review):
+    """
+    Generates a polite and empathetic customer support response
+    using a pre-defined prompt template and a generative model.
+    """
+    # IMPROVED PROMPT
+    prompt = f"""
+You are a helpful and professional customer support agent for a mobile app.
+A customer has left a {sentiment} review for a mobile app.
+The review is about topic #{topic} and says: "{review}"
+
+As a customer support agent, draft a polite and empathetic response to this review.
+Make sure the response is human-like, unique, and not repetitive.
+The response should be 1-2 sentences.
+"""
+    # ADJUSTED GENERATION PARAMETERS
+    inputs = tokenizer(prompt.strip(), return_tensors="pt", truncation=True, max_length=512)
+    outputs = model.generate(**inputs, max_new_tokens=80, num_beams=5, early_stopping=True)
+    return tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+
+# ✅ 6. Apply response generation to a small sample
+# This is a critical step to avoid a very long runtime or crashes.
+sample_size = 5
+sample_df = df.sample(n=sample_size, random_state=42)
+
+sample_df['auto_response'] = sample_df.apply(
+    lambda row: generate_response_enhanced(row['topic'], row['sentiment'], row['review_text']),
+    axis=1
+)
+
+# ✅ 7. Data Visualization
+print("\n📈 Generating visualizations...")
+
+# Pie chart: Sentiment distribution
+sentiment_counts = df['sentiment'].value_counts()
+sentiment_counts.plot.pie(autopct='%1.1f%%', title='Sentiment Distribution')
+plt.ylabel("")
+plt.show()
+
+# Word cloud for NEGATIVE reviews
+negative_text = " ".join(df[df['sentiment'] == 'negative']['review_text'])
+wordcloud_neg = WordCloud(width=800, height=400, background_color='white').generate(negative_text)
+plt.figure()
+plt.imshow(wordcloud_neg, interpolation='bilinear')
+plt.axis("off")
+plt.title("Negative Review Word Cloud")
+plt.show()
+
+# Word cloud for POSITIVE reviews
+positive_text = " ".join(df[df['sentiment'] == 'positive']['review_text'])
+wordcloud_pos = WordCloud(width=800, height=400, background_color='white').generate(positive_text)
+plt.figure()
+plt.imshow(wordcloud_pos, interpolation='bilinear')
+plt.axis("off")
+plt.title("Positive Review Word Cloud")
+plt.show()
+
+# ✅ 8. Show sample output with all information
+print("\n🤖 Sample AI Support Responses:\n")
+for i in range(sample_size):
+    row = sample_df.iloc[i]
+    print(f"🗣️ Sample Review : {row['review_text']}")
+    print(f"📌 Topic ID    : {row['topic']}")
+    print(f"❤️ Sentiment    : {row['sentiment']}")
+    print(f"💬 Auto Response : {row['auto_response']}")
+    print("-" * 80)
+
+print("✅ Done!")
+
+# ----------------------------------------------------------------------
+# 🚀 Optional Streamlit App for Interactive Analysis
+# To run this app, save the code to a file named 'app.py' and run:
+# !streamlit run app.py
+# Note: You'll need to install streamlit and googletrans first:
+# !pip install streamlit googletrans==4.0.0-rc1
+
+import streamlit as st
+from googletrans import Translator
+
+# Initialize translator, models, and NLTK resources
 @st.cache_resource
-def load_models():
-    sentiment_pipe = pipeline("sentiment-analysis", model="nlptown/bert-base-multilingual-uncased-sentiment")
-    flan_tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-base")
-    flan_model = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-base")
-    embedder = SentenceTransformer("all-MiniLM-L6-v2")
-    return sentiment_pipe, flan_tokenizer, flan_model, embedder
+def load_resources():
+    nltk.download('stopwords', quiet=True)
+    nltk.download('vader_lexicon', quiet=True)
+    stop_words = set(stopwords.words('english'))
+    translator = Translator()
+    
+    embedding_model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
+    topic_model = BERTopic(embedding_model=embedding_model)
 
-# Load translation model
-@st.cache_resource
-def load_translation_model():
-    model_name = "Helsinki-NLP/opus-mt-mul-en"
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
-    return tokenizer, model
+    sid = SentimentIntensityAnalyzer()
+    
+    tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-base")
+    model = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-base")
 
-sentiment_pipe, flan_tokenizer, flan_model, embedder = load_models()
-trans_tokenizer, trans_model = load_translation_model()
+    return translator, topic_model, sid, tokenizer, model, stop_words
 
-# Check strict English (not just alphabet)
-def is_strictly_english(text):
-    lang = detect(text)
-    if lang != "en":
-        return False
-    non_english_words = ["merci", "gracias", "hola", "bonjour", "arigato", "ciao"]
-    return not any(word in text.lower() for word in non_english_words)
+translator, topic_model, sid, tokenizer, model, stop_words = load_resources()
 
-# Translate
-def translate_to_english(text):
-    inputs = trans_tokenizer(text, return_tensors="pt", padding=True, truncation=True)
-    outputs = trans_model.generate(**inputs)
-    return trans_tokenizer.decode(outputs[0], skip_special_tokens=True)
+# Streamlit App UI
+st.title("Customer Review Analyzer")
+st.write("Input a customer review in any language and get an AI-generated response.")
 
-# AI response generation
-def generate_response(review, sentiment, topic):
-    prompt = (
-        f"The customer wrote: '{review}'\n"
-        f"- Sentiment: {sentiment}\n"
-        f"- Topic: {topic}\n"
-        "Write a helpful and empathetic customer service response addressing their concern."
-    )
-    inputs = flan_tokenizer(prompt, return_tensors="pt", truncation=True)
-    output = flan_model.generate(**inputs, max_new_tokens=100)
-    return flan_tokenizer.decode(output[0], skip_special_tokens=True)
+user_review = st.text_area("Enter a review here:", height=150)
 
-# Sentiment category
-def classify_sentiment(score):
-    return "POSITIVE" if score > 3 else "NEUTRAL" if score == 3 else "NEGATIVE"
+if st.button("Analyze Review"):
+    if user_review:
+        # Language Detection and Translation
+        st.write("---")
+        with st.spinner("Detecting language and translating..."):
+            try:
+                detected_lang = translator.detect(user_review).lang
+                st.info(f"Detected Language: **{detected_lang}**")
+                
+                translated_review = translator.translate(user_review, dest='en').text
+                st.markdown(f"**Translated Review:** {translated_review}")
+            except Exception as e:
+                st.error(f"Translation failed: {e}")
+                translated_review = user_review
 
-# Clustering logic
-def cluster_by_similarity(embeddings, threshold=0.85):
-    clusters, assigned = [], set()
-    for i, emb in enumerate(embeddings):
-        if i in assigned:
-            continue
-        cluster = [i]
-        assigned.add(i)
-        for j in range(i+1, len(embeddings)):
-            if j not in assigned and cosine_similarity([emb], [embeddings[j]])[0][0] >= threshold:
-                cluster.append(j)
-                assigned.add(j)
-        clusters.append(cluster)
+        # Preprocessing
+        cleaned_review = translated_review.lower()
+        cleaned_review = re.sub(r'[^a-zA-Z\s]', '', cleaned_review)
+        words = cleaned_review.split()
+        cleaned_review = " ".join([word for word in words if word not in stop_words])
+        
+        # Topic Modeling
+        with st.spinner("Analyzing topic..."):
+            topic_id, _ = topic_model.fit_transform([cleaned_review])
+            st.success(f"**Detected Topic ID:** {topic_id[0]}")
 
-    labels = [0] * len(embeddings)
-    for topic_id, group in enumerate(clusters):
-        for idx in group:
-            labels[idx] = topic_id
-    return labels
+        # Sentiment Analysis
+        with st.spinner("Analyzing sentiment..."):
+            sentiment_score = sid.polarity_scores(cleaned_review)['compound']
+            if sentiment_score >= 0.05:
+                sentiment = 'positive'
+            elif sentiment_score <= -0.05:
+                sentiment = 'negative'
+            else:
+                sentiment = 'neutral'
+            st.success(f"**Sentiment:** {sentiment}")
 
-# Streamlit UI
-st.set_page_config(page_title="Multilingual Review Analyzer", layout="wide")
-st.title("🌍 Multilingual Review Response Generator")
+        # Generative Response
+        with st.spinner("Generating response..."):
+            prompt = f"""
+            You are a helpful and professional customer support agent for a mobile app.
+            A customer has left a {sentiment} review about topic #{topic_id[0]}.
+            Here is what they said: "{translated_review}"
 
-review_input = st.text_area("✍️ Paste reviews (one per line)", height=200)
+            As a customer support agent, draft a polite and empathetic response to this review.
+            The response should be 1-2 sentences and not repetitive.
+            """
+            inputs = tokenizer(prompt.strip(), return_tensors="pt", truncation=True, max_length=512)
+            outputs = model.generate(**inputs, max_new_tokens=80, num_beams=5, early_stopping=True)
+            auto_response = tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-if st.button("Analyze"):
-    raw_reviews = [r.strip() for r in review_input.split("\n") if r.strip()]
-    if not raw_reviews:
-        st.warning("Please enter at least one review.")
-        st.stop()
+        st.subheader("Auto-generated Response")
+        response_text = st.text_area("Response", value=auto_response, height=100)
 
-    translated_reviews, sentiments, topics, languages = [], [], [], []
-
-    for i, review in enumerate(raw_reviews):
-        lang = detect(review)
-        is_english = is_strictly_english(review)
-        translated = review if is_english else translate_to_english(review)
-
-        sentiment_result = sentiment_pipe(translated)[0]
-        score = int(sentiment_result["label"].split()[0])
-        sentiment = classify_sentiment(score)
-
-        sentiments.append(sentiment)
-        translated_reviews.append(translated)
-        languages.append(lang)
-
-        st.markdown(f"### Review {i+1}")
-        st.markdown(f"- 🌐 Detected Language: `{lang}`")
-        if not is_english:
-            st.markdown(f"- 🗣️ Translated: `{translated}`")
-        st.markdown(f"- 😊 Sentiment: `{sentiment}` ({score} stars)")
-        st.markdown("---")
-
-    embeddings = embedder.encode(translated_reviews)
-    cluster_labels = cluster_by_similarity(embeddings)
-
-    for i, (review, sentiment, label) in enumerate(zip(translated_reviews, sentiments, cluster_labels)):
-        topic = f"Topic {label + 1}"
-        topics.append(topic)
-        response = generate_response(review, sentiment, topic)
-
-        st.markdown(f"**🧠 Topic:** `{topic}`")
-        st.text_area("✍️ Suggested Response:", value=response, key=f"response_{i}", height=100)
-        st.markdown("---")
-
-    st.subheader("📊 Sentiment Distribution")
-    sentiment_count = {s: sentiments.count(s) for s in set(sentiments)}
-    fig, ax = plt.subplots()
-    ax.pie(sentiment_count.values(), labels=sentiment_count.keys(), autopct="%1.1f%%")
-    st.pyplot(fig)
-
-    st.subheader("☁️ Word Cloud per Topic")
-    for label in set(cluster_labels):
-        topic_text = " ".join([r for i, r in enumerate(translated_reviews) if cluster_labels[i] == label])
-        wordcloud = WordCloud(width=800, height=400, background_color="white").generate(topic_text)
-        st.markdown(f"**🧠 Topic {label + 1}**")
-        fig_wc, ax_wc = plt.subplots()
-        ax_wc.imshow(wordcloud, interpolation="bilinear")
-        ax_wc.axis("off")
-        st.pyplot(fig_wc)
+        # Copy to clipboard button
+        st.markdown(f"""
+            <button onclick="navigator.clipboard.writeText('{response_text}');">
+                Copy Reply
+            </button>
+        """, unsafe_allow_html=True)
+        
+    else:
+        st.warning("Please enter a review to analyze.")
