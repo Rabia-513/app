@@ -1,9 +1,7 @@
 streamlit
-langdetect
-transformers
+pandas
+nltk
+bertopic
 sentence-transformers
-torch
-matplotlib
-wordcloud
-scikit-learn
-sentencepiece
+transformers
+googletrans==4.0.0-rc1
